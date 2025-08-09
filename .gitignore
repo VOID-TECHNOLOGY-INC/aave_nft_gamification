@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+
+# Node
+node_modules/
+**/node_modules/
+npm-debug.log*
+
+# Build outputs
+web/dist/
+functions/lib/
+coverage/
+*.log
+
+# Env files
+*.env
+*.env.local
+*.env.production
+
+# Editors
+.vscode/
+.idea/
+
+# Firebase
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
