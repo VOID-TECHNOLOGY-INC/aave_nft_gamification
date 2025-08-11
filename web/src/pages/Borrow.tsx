@@ -27,7 +27,8 @@ export default function Borrow() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const canBorrow = isConnected && ready
+  // 進行要件: Step1/2 はウォレット接続のみ。Step3 以降でAave設定が必要になったら別途ガード。
+  const canProceed = isConnected
 
   async function loadRemote() {
     setLoading(true)
@@ -120,11 +121,14 @@ export default function Borrow() {
           <button className="primary" onClick={() => setActiveStep((s) => Math.max(0, s - 1))} disabled={activeStep === 0}>
             戻る
           </button>
-          <button className="primary" onClick={() => setActiveStep((s) => Math.min(steps.length - 1, s + 1))} disabled={!canBorrow || activeStep === steps.length - 1}>
+          <button className="primary" onClick={() => setActiveStep((s) => Math.min(steps.length - 1, s + 1))} disabled={!canProceed || activeStep === steps.length - 1}>
             次へ
           </button>
         </div>
-        {!canBorrow && <p style={{ color: '#9aa0a6' }}>ウォレット接続とAave Pool設定が必要です。</p>}
+        {!isConnected && <p style={{ color: '#9aa0a6' }}>ウォレット接続が必要です。</p>}
+        {activeStep === 2 && !ready && (
+          <p style={{ color: '#9aa0a6' }}>Step3（借入実行）ではAave Pool設定（VITE_AAVE_POOL_ADDRESS_BASE_SEPOLIA）が必要です。</p>
+        )}
       </div>
     </section>
   )
