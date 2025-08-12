@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-test-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          cache-dependency-path: |
+            web/package-lock.json
+            functions/package-lock.json
+      - name: Install web deps
+        run: npm --prefix web ci
+      - name: Build web
+        run: npm --prefix web run build --silent
+      - name: Test web (vitest)
+        run: npm --prefix web run test --silent
+
+  build-functions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          cache-dependency-path: functions/package-lock.json
+      - name: Install functions deps
+        run: npm --prefix functions ci
+      - name: Build functions (tsc)
+        run: npm --prefix functions run build --silent
+
+
