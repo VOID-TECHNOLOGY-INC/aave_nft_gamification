@@ -115,7 +115,7 @@
 
 ---
 
-## PR-8: CI（GitHub Actions）
+## PR-8: CI（GitHub Actions） [Done]
 
 - ブランチ: `ci/vitest-build`
 - 変更点
@@ -124,7 +124,7 @@
 - テスト
   - PR で CI が走り、緑になること
 - 受け入れ基準
-  - main/PR で自動チェックが実行される
+  - main/PR で自動チェックが実行される（達成）
 
 ---
 
