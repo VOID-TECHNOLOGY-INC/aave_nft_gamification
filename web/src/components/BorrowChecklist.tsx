@@ -9,7 +9,7 @@ type Props = {
 export default function BorrowChecklist(p: Props) {
   function Item({ ok, label }: { ok: boolean; label: string }) {
     return (
-      <li style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <li className={ok ? 'check-fade-in' : ''} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span>{ok ? '✅' : '⏳'}</span>
         <span>{label}</span>
       </li>
