@@ -3,10 +3,10 @@ import { getQuoteUSD } from '@/lib/loanMath'
 import { useAccount } from 'wagmi'
 import { useAavePool } from '@/hooks/useAavePool'
 import { fetchQuoteSim } from '@/services/quote'
-import { Stepper } from '@/components/Stepper'
-import Approve721 from '@/components/Approve721'
-import DepositVault from '@/components/DepositVault'
-import OpenLoan from '@/components/OpenLoan'
+import EvaluationBanner from '@/components/EvaluationBanner'
+import SmartActionPanel from '@/components/SmartActionPanel'
+import BorrowChecklist from '@/components/BorrowChecklist'
+import { decideCta, UiState } from '@/lib/cta'
 
 export default function Borrow() {
   const [price1e8, setPrice1e8] = useState<number>(100_00_0000) // $100 default
@@ -45,13 +45,23 @@ export default function Borrow() {
     }
   }
 
-  // Dummy flow state
-  const [activeStep, setActiveStep] = useState(0)
-  const steps = [
-    { title: '承認(Approve ERC-721)' },
-    { title: 'Vaultに預入(Deposit)' },
-    { title: 'Loan Open(借入実行)' }
-  ]
+  const uiState: UiState = {
+    isConnected,
+    isApproved: false,
+    isDeposited: false,
+    amountUsd: debt,
+    networkOk: true,
+    evalSnap: remote
+      ? {
+          valueUsd: remote.valueUsd,
+          effectiveLtv: remote.effectiveLTV,
+          maxBorrowUsd: remote.maxBorrowUsd,
+          healthFactor: remote.healthFactor,
+          fetchedAt: Math.floor(Date.now() / 1000)
+        }
+      : undefined
+  }
+  const decision = decideCta(uiState)
 
   return (
     <section>
@@ -111,24 +121,15 @@ export default function Borrow() {
         )}
       </div>
 
-      <div className="card">
-        <h3>借入フロー</h3>
-        <Stepper steps={steps} active={activeStep} />
-        {activeStep === 0 && <Approve721 />}
-        {activeStep === 1 && <DepositVault />}
-        {activeStep === 2 && <OpenLoan />}
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <button className="primary" onClick={() => setActiveStep((s) => Math.max(0, s - 1))} disabled={activeStep === 0}>
-            戻る
-          </button>
-          <button className="primary" onClick={() => setActiveStep((s) => Math.min(steps.length - 1, s + 1))} disabled={!canProceed || activeStep === steps.length - 1}>
-            次へ
-          </button>
-        </div>
-        {!isConnected && <p style={{ color: '#9aa0a6' }}>ウォレット接続が必要です。</p>}
-        {activeStep === 2 && !ready && (
-          <p style={{ color: '#9aa0a6' }}>Step3（借入実行）ではAave Pool設定（VITE_AAVE_POOL_ADDRESS_BASE_SEPOLIA）が必要です。</p>
-        )}
+      <EvaluationBanner
+        valueUsd={remote?.valueUsd}
+        effectiveLtv={remote?.effectiveLTV}
+        maxBorrowUsd={remote?.maxBorrowUsd}
+        healthFactor={remote?.healthFactor}
+      />
+      <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <BorrowChecklist walletConnected={isConnected} approved={false} deposited={false} evaluated={!!remote} />
+        <SmartActionPanel state={uiState} onClick={() => { /* TODO: wire action */ }} />
       </div>
     </section>
   )
