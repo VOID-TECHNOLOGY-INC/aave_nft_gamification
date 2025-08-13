@@ -7,6 +7,7 @@ import EvaluationBanner from '@/components/EvaluationBanner'
 import SmartActionPanel from '@/components/SmartActionPanel'
 import BorrowChecklist from '@/components/BorrowChecklist'
 import { decideCta, UiState } from '@/lib/cta'
+import { deriveChecklistState } from '@/lib/checklist'
 import { CONFIG } from '@/config'
 import { Address, isAddress, parseUnits } from 'viem'
 import { useReadContract, useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
@@ -81,7 +82,10 @@ export default function Borrow() {
     abi: ERC721_ABI,
     address: isAddress(collection) ? (collection as Address) : undefined,
     functionName: 'getApproved',
-    args: tokenId ? [BigInt(tokenId)] : undefined
+    args: tokenId ? [BigInt(tokenId)] : undefined,
+    // ブロック毎に更新
+    watch: true,
+    query: { enabled: isAddress(collection) && !!tokenId }
   })
   const approved = !!approvedTo && vault && approvedTo.toLowerCase() === vault.toLowerCase()
   // 預入状態（暫定: localStorageのフラグ）
@@ -195,7 +199,12 @@ export default function Borrow() {
         healthFactor={remote?.healthFactor}
       />
       <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <BorrowChecklist walletConnected={isConnected} approved={approved} deposited={deposited} evaluated={!!remote} />
+        <BorrowChecklist
+          walletConnected={isConnected}
+          approved={deriveChecklistState({ isConnected, approvedTo: (approvedTo as string) || null, vault, evalFetchedAt: remote ? Math.floor(Date.now() / 1000) : undefined, ttlSec: 300, depositedFlag: deposited }).approved}
+          deposited={deposited}
+          evaluated={!!remote}
+        />
         <SmartActionPanel state={{ ...uiState, isApproved: approved, isDeposited: deposited }} onClick={onSmartClick} />
       </div>
 
