@@ -5,12 +5,13 @@ import { useAavePool } from '@/hooks/useAavePool'
 import { fetchQuoteSim } from '@/services/quote'
 import EvaluationBanner from '@/components/EvaluationBanner'
 import SmartActionPanel from '@/components/SmartActionPanel'
+import { tryEstimateTxUsd } from '@/lib/gas'
 import BorrowChecklist from '@/components/BorrowChecklist'
 import { decideCta, UiState } from '@/lib/cta'
 import { deriveChecklistState } from '@/lib/checklist'
 import { CONFIG } from '@/config'
 import { Address, isAddress, parseUnits } from 'viem'
-import { useReadContract, useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
+import { usePublicClient, useReadContract, useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
 
 export default function Borrow() {
   const [price1e8, setPrice1e8] = useState<number>(100_00_0000) // $100 default
@@ -23,6 +24,7 @@ export default function Borrow() {
   const { isConnected } = useAccount()
   const { address: userAddress } = useAccount()
   const { ready } = useAavePool()
+  const publicClient = usePublicClient()
 
   const quote = useMemo(() => {
     return getQuoteUSD({ price1e8, baseLTV, confidence, liquidity, volatility, debt })
@@ -39,6 +41,7 @@ export default function Borrow() {
   const [loanManager, setLoanManager] = useState<string>(CONFIG.loanManagerAddress ?? '')
   const [currency, setCurrency] = useState<string>('')
   const [decimals, setDecimals] = useState<string>('6')
+  const [amountToken, setAmountToken] = useState<string>('')
 
   // 進行要件: Step1/2 はウォレット接続のみ。Step3 以降でAave設定が必要になったら別途ガード。
   const canProceed = isConnected
@@ -111,7 +114,7 @@ export default function Borrow() {
       ] as const
       writeContract({ abi: ABI, address: vault as Address, functionName: 'deposit', args: [collection as Address, BigInt(tokenId)] })
     } else if (d.nextStateHint === 'borrow') {
-      if (!isAddress(loanManager) || !isAddress(collection) || !tokenId || !isAddress(currency) || !amount || !decimals) return
+      if (!isAddress(loanManager) || !isAddress(collection) || !tokenId || !isAddress(currency) || !amountToken || !decimals) return
       const ABI = [
         { type: 'function', name: 'openLoan', stateMutability: 'nonpayable', inputs: [
           { name: 'collection', type: 'address' }, { name: 'tokenId', type: 'uint256' }, { name: 'amount', type: 'uint256' }, { name: 'currency', type: 'address' }
@@ -119,13 +122,76 @@ export default function Borrow() {
       ] as const
       let parsed
       try {
-        parsed = parseUnits(String(amount), Number(decimals))
+        parsed = parseUnits(String(amountToken), Number(decimals))
       } catch {
         return
       }
       writeContract({ abi: ABI, address: loanManager as Address, functionName: 'openLoan', args: [collection as Address, BigInt(tokenId), parsed, currency as Address] })
     }
   }
+
+  // 送信前の推定手数料（USD）
+  const [gasState, setGasState] = useState<{ hashKey: string; result: ReturnType<typeof Object> | any } | null>(null)
+  useEffect(() => {
+    async function run() {
+      if (!publicClient) return
+      const d = decision
+      // 必要入力が揃わない場合はスキップ
+      if (d.disabled) { setGasState(null); return }
+      try {
+        if (d.nextStateHint === 'approve') {
+          if (!isAddress(collection) || !tokenId || !isAddress(vault)) { setGasState(null); return }
+          const hashKey = `approve:${collection}:${tokenId}:${vault}`
+          const res = await tryEstimateTxUsd({
+            estimate: () => publicClient.estimateContractGas({
+              abi: [{ type:'function', name:'approve', stateMutability:'nonpayable', inputs:[{name:'to',type:'address'},{name:'tokenId',type:'uint256'}], outputs:[] }] as const,
+              address: collection as Address,
+              functionName: 'approve',
+              args: [vault as Address, BigInt(tokenId)]
+            }),
+            getGasPrice: () => publicClient.getGasPrice(),
+            ethUsdPrice1e8: BigInt(CONFIG.ethUsdPrice1e8)
+          })
+          setGasState({ hashKey, result: res })
+        } else if (d.nextStateHint === 'deposit') {
+          if (!isAddress(vault) || !isAddress(collection) || !tokenId) { setGasState(null); return }
+          const hashKey = `deposit:${vault}:${collection}:${tokenId}`
+          const res = await tryEstimateTxUsd({
+            estimate: () => publicClient.estimateContractGas({
+              abi: [{ type:'function', name:'deposit', stateMutability:'nonpayable', inputs:[{name:'collection',type:'address'},{name:'tokenId',type:'uint256'}], outputs:[] }] as const,
+              address: vault as Address,
+              functionName: 'deposit',
+              args: [collection as Address, BigInt(tokenId)]
+            }),
+            getGasPrice: () => publicClient.getGasPrice(),
+            ethUsdPrice1e8: BigInt(CONFIG.ethUsdPrice1e8)
+          })
+          setGasState({ hashKey, result: res })
+        } else if (d.nextStateHint === 'borrow') {
+          if (!isAddress(loanManager) || !isAddress(collection) || !tokenId || !isAddress(currency) || !amountToken || !decimals) { setGasState(null); return }
+          let parsed
+          try { parsed = parseUnits(String(amountToken), Number(decimals)) } catch { setGasState(null); return }
+          const hashKey = `borrow:${loanManager}:${collection}:${tokenId}:${currency}:${parsed.toString()}`
+          const res = await tryEstimateTxUsd({
+            estimate: () => publicClient.estimateContractGas({
+              abi: [{ type:'function', name:'openLoan', stateMutability:'nonpayable', inputs:[{name:'collection',type:'address'},{name:'tokenId',type:'uint256'},{name:'amount',type:'uint256'},{name:'currency',type:'address'}], outputs:[{name:'loanId',type:'uint256'}] }] as const,
+              address: loanManager as Address,
+              functionName: 'openLoan',
+              args: [collection as Address, BigInt(tokenId), parsed, currency as Address]
+            }),
+            getGasPrice: () => publicClient.getGasPrice(),
+            ethUsdPrice1e8: BigInt(CONFIG.ethUsdPrice1e8)
+          })
+          setGasState({ hashKey, result: res })
+        } else {
+          setGasState(null)
+        }
+      } catch {
+        setGasState(null)
+      }
+    }
+    run()
+  }, [publicClient, decision, collection, tokenId, vault, loanManager, currency, amountToken, decimals])
 
   // Tx 成功時のローカルフラグ
   useEffect(() => {
@@ -205,7 +271,7 @@ export default function Borrow() {
           deposited={deposited}
           evaluated={!!remote}
         />
-        <SmartActionPanel state={{ ...uiState, isApproved: approved, isDeposited: deposited }} onClick={onSmartClick} />
+        <SmartActionPanel state={{ ...uiState, isApproved: approved, isDeposited: deposited }} onClick={onSmartClick} gas={gasState?.result} />
       </div>
 
       <div className="card">
@@ -234,6 +300,10 @@ export default function Borrow() {
           <label>
             小数桁(decimals)
             <input placeholder="6" value={decimals} onChange={(e) => setDecimals(e.target.value)} />
+          </label>
+          <label>
+            借入数量(トークン)
+            <input placeholder="0.0" value={amountToken} onChange={(e) => setAmountToken(e.target.value)} />
           </label>
         </div>
         {(isPending || isMining) && <p style={{ color: '#9aa0a6' }}>送信中...</p>}
