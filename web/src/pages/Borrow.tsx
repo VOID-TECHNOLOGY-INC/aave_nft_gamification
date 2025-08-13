@@ -41,6 +41,7 @@ export default function Borrow() {
   const [loanManager, setLoanManager] = useState<string>(CONFIG.loanManagerAddress ?? '')
   const [currency, setCurrency] = useState<string>('')
   const [decimals, setDecimals] = useState<string>('6')
+  const [amountToken, setAmountToken] = useState<string>('')
 
   // 進行要件: Step1/2 はウォレット接続のみ。Step3 以降でAave設定が必要になったら別途ガード。
   const canProceed = isConnected
@@ -113,7 +114,7 @@ export default function Borrow() {
       ] as const
       writeContract({ abi: ABI, address: vault as Address, functionName: 'deposit', args: [collection as Address, BigInt(tokenId)] })
     } else if (d.nextStateHint === 'borrow') {
-      if (!isAddress(loanManager) || !isAddress(collection) || !tokenId || !isAddress(currency) || !amount || !decimals) return
+      if (!isAddress(loanManager) || !isAddress(collection) || !tokenId || !isAddress(currency) || !amountToken || !decimals) return
       const ABI = [
         { type: 'function', name: 'openLoan', stateMutability: 'nonpayable', inputs: [
           { name: 'collection', type: 'address' }, { name: 'tokenId', type: 'uint256' }, { name: 'amount', type: 'uint256' }, { name: 'currency', type: 'address' }
@@ -121,7 +122,7 @@ export default function Borrow() {
       ] as const
       let parsed
       try {
-        parsed = parseUnits(String(amount), Number(decimals))
+        parsed = parseUnits(String(amountToken), Number(decimals))
       } catch {
         return
       }
@@ -167,9 +168,9 @@ export default function Borrow() {
           })
           setGasState({ hashKey, result: res })
         } else if (d.nextStateHint === 'borrow') {
-          if (!isAddress(loanManager) || !isAddress(collection) || !tokenId || !isAddress(currency) || !amount || !decimals) { setGasState(null); return }
+          if (!isAddress(loanManager) || !isAddress(collection) || !tokenId || !isAddress(currency) || !amountToken || !decimals) { setGasState(null); return }
           let parsed
-          try { parsed = parseUnits(String(amount), Number(decimals)) } catch { setGasState(null); return }
+          try { parsed = parseUnits(String(amountToken), Number(decimals)) } catch { setGasState(null); return }
           const hashKey = `borrow:${loanManager}:${collection}:${tokenId}:${currency}:${parsed.toString()}`
           const res = await tryEstimateTxUsd({
             estimate: () => publicClient.estimateContractGas({
@@ -190,7 +191,7 @@ export default function Borrow() {
       }
     }
     run()
-  }, [publicClient, decision, collection, tokenId, vault, loanManager, currency, amount, decimals])
+  }, [publicClient, decision, collection, tokenId, vault, loanManager, currency, amountToken, decimals])
 
   // Tx 成功時のローカルフラグ
   useEffect(() => {
@@ -299,6 +300,10 @@ export default function Borrow() {
           <label>
             小数桁(decimals)
             <input placeholder="6" value={decimals} onChange={(e) => setDecimals(e.target.value)} />
+          </label>
+          <label>
+            借入数量(トークン)
+            <input placeholder="0.0" value={amountToken} onChange={(e) => setAmountToken(e.target.value)} />
           </label>
         </div>
         {(isPending || isMining) && <p style={{ color: '#9aa0a6' }}>送信中...</p>}
